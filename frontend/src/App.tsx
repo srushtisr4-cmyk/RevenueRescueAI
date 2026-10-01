@@ -79,7 +79,7 @@ const scoreFactors = topOpportunity
 
   useEffect(() => {
     axios
-      .get("http://localhost:5000/api/pipeline")
+      .get("https://revenuerescueai-2.onrender.com/api/pipeline")
       .then((response) => {
         setPipeline(response.data);
       })
