@@ -6,3 +6,6 @@ export const pool = new Pool({
     ? { rejectUnauthorized: false }
     : false,
 });
+
+
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" "postgresql://revenue_rescue_user:WCLAj05LhUIrGRluceqDRDlUxGu202ip@dpg-dauk58ou01pc7381n0vg-a.oregon-postgres.render.com/revenue_rescue"
