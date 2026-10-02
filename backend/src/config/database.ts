@@ -1,4 +1,10 @@
+import "dotenv/config";
 import { Pool } from "pg";
+
+console.log("DATABASE CONFIG LOADED");
+console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+console.log("DATABASE_URL length:", process.env.DATABASE_URL?.length);
+console.log("DATABASE_URL starts:", process.env.DATABASE_URL?.substring(0, 25));
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -6,6 +12,3 @@ export const pool = new Pool({
     ? { rejectUnauthorized: false }
     : false,
 });
-
-
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" "postgresql://revenue_rescue_user:WCLAj05LhUIrGRluceqDRDlUxGu202ip@dpg-dauk58ou01pc7381n0vg-a.oregon-postgres.render.com/revenue_rescue"

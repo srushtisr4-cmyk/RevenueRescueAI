@@ -1,14 +1,17 @@
 import { Router, type Request, type Response } from "express";
-import { pool } from "../config/database.js";
+import { pool } from "../config/database.ts";
 import {
   calculatePriorityScore,
   getPriorityLevel
 } from "../services/priorityService.js";
 import { generateRecommendation } from "../services/recommendationService.js";
+import { analyzeWithAI } from "../services/aiService.js";
 const router = Router();
+console.log("PIPELINE ROUTE LOADED - POOL:", !!pool);
 
 router.get("/", async (req: Request, res: Response) => {
   try {
+    console.log("PIPELINE STEP 1 - BEFORE SQL");
     const result = await pool.query(`
       SELECT
         l.lead_id,
@@ -45,7 +48,14 @@ router.get("/", async (req: Request, res: Response) => {
       ORDER BY l.lead_score DESC NULLS LAST
     `);
 
-    const pipeline = result.rows.map((row: any) => {
+    const pipeline = await Promise.all(
+  result.rows.map(async (row: any) => {
+      const aiAnalysis = await analyzeWithAI({
+  lead_score: row.lead_score,
+  deal_value: row.deal_value,
+  probability: row.probability,
+  deal_stage: row.deal_stage
+});
   const priorityScore = calculatePriorityScore({
     lead_score: row.lead_score,
     deal_value: row.deal_value,
@@ -67,18 +77,21 @@ router.get("/", async (req: Request, res: Response) => {
     priority_score: priorityScore,
     priority_level: getPriorityLevel(priorityScore),
     priority_reason: recommendation.reason,
-    recommended_action: recommendation.action
-  };
-});
-
+    recommended_action: recommendation.action,
+    ai_priority_level: aiAnalysis.priority_level,
+ai_recommendation: aiAnalysis.recommendation
+        };
+    })
+  );
 res.json(pipeline);
 
   } catch (error) {
     console.error("Error fetching pipeline data:", error);
 
     res.status(500).json({
-      error: "Failed to fetch pipeline data"
-    });
+  error: "Failed to fetch pipeline data",
+  details: error instanceof Error ? error.message : String(error)
+});
   }
 });
 

@@ -1,452 +1,588 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
 interface PipelineItem {
   lead_id: string;
   lead_name: string;
-  company_name: string;
-  lead_status: string;
-  lead_score: string;
-  deal_name: string;
-  deal_stage: string;
-  deal_value: string;
-  probability: string;
-  priority_score: number;
-  priority_level: string;
+  lead_source?: string;
+  lead_status?: string;
+  lead_score?: number | string | null;
+  last_contacted_at?: string | null;
+
+  account_id?: string;
+  company_name?: string;
+  industry?: string;
+  company_size?: number | string | null;
+  location?: string;
+  annual_revenue?: number | string | null;
+  account_status?: string;
+
+  deal_id?: string;
+  deal_name?: string;
+  deal_stage?: string | null;
+  deal_value?: number | string | null;
+  probability?: number | string | null;
+  expected_close_date?: string | null;
+  deal_status?: string;
+
+  priority_score?: number | string | null;
+  priority_level?: string;
   priority_reason?: string;
   recommended_action?: string;
-  annual_revenue: string;
-company_size: number;
+}
+
+const API_URL =
+  "https://revenuerescueai-2.onrender.com/api/pipeline";
+
+function money(value: number | string | null | undefined) {
+  const n = Number(value ?? 0);
+
+  if (!n) return "₹0";
+
+  if (n >= 10000000) {
+    return `₹${(n / 10000000).toFixed(1)}Cr`;
+  }
+
+  if (n >= 100000) {
+    return `₹${(n / 100000).toFixed(1)}L`;
+  }
+
+  return `₹${n.toLocaleString("en-IN")}`;
+}
+
+function score(value: number | string | null | undefined) {
+  return Number(value ?? 0).toFixed(1);
+}
+
+function priorityClass(level?: string) {
+  const value = level?.toUpperCase();
+
+  if (value === "HIGH") return "priority high";
+  if (value === "MEDIUM") return "priority medium";
+  return "priority low";
 }
 
 function App() {
   const [pipeline, setPipeline] = useState<PipelineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<PipelineItem | null>(null);
   const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("ALL");
-  const [selectedOpportunity, setSelectedOpportunity] =
-  useState<PipelineItem | null>(null);
-  const highCount = pipeline.filter(
-  (item) => item.priority_level === "HIGH"
-).length;
-
-const mediumCount = pipeline.filter(
-  (item) => item.priority_level === "MEDIUM"
-).length;
-
-const lowCount = pipeline.filter(
-  (item) => item.priority_level === "LOW"
-).length;
-
-const topOpportunity = [...pipeline].sort(
-  (a, b) => b.priority_score - a.priority_score
-)[0];
-const scoreFactors = topOpportunity
-  ? [
-      {
-        label: "Lead Score",
-        value: Number(topOpportunity.lead_score),
-        display: `${Number(topOpportunity.lead_score).toFixed(1)} / 100`,
-      },
-      {
-        label: "Deal Probability",
-        value: Number(topOpportunity.probability),
-        display: `${Number(topOpportunity.probability).toFixed(0)}%`,
-      },
-      {
-        label: "Deal Value",
-        value: Math.min(
-          (Number(topOpportunity.deal_value) / 1000000) * 100,
-          100
-        ),
-        display: `₹${Number(topOpportunity.deal_value).toLocaleString("en-IN")}`,
-      },
-      {
-        label: "Deal Stage",
-        value:
-          topOpportunity.deal_stage.toLowerCase() === "negotiation"
-            ? 100
-            : topOpportunity.deal_stage.toLowerCase() === "proposal"
-            ? 75
-            : topOpportunity.deal_stage.toLowerCase() === "qualified"
-            ? 50
-            : 25,
-        display: topOpportunity.deal_stage,
-      },
-    ]
-  : [];
 
   useEffect(() => {
-    axios
-      .get("https://revenuerescueai-2.onrender.com/api/pipeline")
-      .then((response) => {
+    async function loadPipeline() {
+      try {
+        const response = await axios.get<PipelineItem[]>(API_URL);
         setPipeline(response.data);
-      })
-      .catch((error) => {
-        console.error("Failed to fetch pipeline:", error);
-      })
-      .finally(() => {
+      } catch (error) {
+        console.error("Pipeline loading failed:", error);
+      } finally {
         setLoading(false);
-      });
+      }
+    }
+
+    loadPipeline();
   }, []);
+
+  const filteredPipeline = useMemo(() => {
+    const query = search.toLowerCase().trim();
+
+    if (!query) return pipeline;
+
+    return pipeline.filter((item) =>
+      [
+        item.lead_name,
+        item.company_name,
+        item.deal_name,
+        item.deal_stage,
+        item.priority_level,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [pipeline, search]);
+
+  const totalPipeline = useMemo(
+    () =>
+      pipeline.reduce(
+        (sum, item) => sum + Number(item.deal_value ?? 0),
+        0
+      ),
+    [pipeline]
+  );
+
+  const weightedRevenue = useMemo(
+    () =>
+      pipeline.reduce(
+        (sum, item) =>
+          sum +
+          Number(item.deal_value ?? 0) *
+            (Number(item.probability ?? 0) / 100),
+        0
+      ),
+    [pipeline]
+  );
+
+  const averageScore = useMemo(() => {
+    if (!pipeline.length) return 0;
+
+    return (
+      pipeline.reduce(
+        (sum, item) => sum + Number(item.priority_score ?? 0),
+        0
+      ) / pipeline.length
+    );
+  }, [pipeline]);
+
+  const highPriorityCount = pipeline.filter(
+    (item) => item.priority_level?.toUpperCase() === "HIGH"
+  ).length;
+
+  const featured = pipeline[0];
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-mark">R</div>
+        <p>Loading RevenueRescue AI...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
-      <header className="header">
-        <div>
-          <h1>RevenueRescue AI</h1>
-          <p>AI-powered pipeline prioritization</p>
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">R</div>
+
+          <div>
+            <div className="brand-name">RevenueRescue AI</div>
+            <div className="brand-subtitle">
+              Revenue Intelligence
+            </div>
+          </div>
         </div>
-      </header>
 
-      <main className="dashboard">
-        <section className="ai-banner">
-  <div>
-    <span className="ai-badge">AI ACTIVE</span>
-    <h2>Revenue opportunities prioritized automatically</h2>
-    <p>
-      RevenueRescue AI analyzes lead engagement, deal value,
-      probability, and deal stage to identify the opportunities
-      that need attention.
-    </p>
-  </div>
-</section>
-        <section className="stats">
-          <div className="stat-card">
-  <span>Expected Revenue</span>
-  <strong>
-    ₹
-    {pipeline
-      .reduce(
-        (total, item) =>
-          total +
-          Number(item.deal_value || 0) *
-            (Number(item.probability || 0) / 100),
-        0
-      )
-      .toLocaleString("en-IN", {
-        maximumFractionDigits: 0,
-      })}
-  </strong>
-</div>
-          <div className="stat-card">
-  <span>Pipeline Value</span>
-  <strong>
-    ₹
-    {pipeline
-      .reduce((total, item) => total + Number(item.deal_value || 0), 0)
-      .toLocaleString("en-IN")}
-  </strong>
-</div>
-          <div className="stat-card">
-            <span>Total Opportunities</span>
-            <strong>{pipeline.length}</strong>
+        <div className="sidebar-section">
+          <div className="sidebar-label">WORKSPACE</div>
+
+          <button className="nav-link active">
+            <span>Overview</span>
+          </button>
+
+          <button className="nav-link">
+            <span>Pipeline</span>
+          </button>
+
+          <button className="nav-link">
+            <span>AI Insights</span>
+          </button>
+
+          <button className="nav-link">
+            <span>Accounts</span>
+          </button>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">ANALYTICS</div>
+
+          <button className="nav-link">
+            <span>Performance</span>
+          </button>
+
+          <button className="nav-link">
+            <span>Forecast</span>
+          </button>
+
+          <button className="nav-link">
+            <span>Activity</span>
+          </button>
+        </div>
+
+        <div className="sidebar-bottom">
+          <div className="sidebar-label">SYSTEM</div>
+
+          <div className="system-status">
+            <span className="online-dot" />
+            <div>
+              <strong>AI Engine Online</strong>
+              <small>Ollama · LangGraph</small>
+            </div>
           </div>
 
-          <div className="stat-card">
-            <span>High Priority</span>
-            <strong>
-              {pipeline.filter((item) => item.priority_level === "HIGH").length}
-            </strong>
+          <div className="sidebar-footer">
+            <span className="footer-avatar">SR</span>
+
+            <div>
+              <strong>Revenue Team</strong>
+              <small>Administrator</small>
+            </div>
+
+            <span className="footer-arrow">⌄</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <main className="main">
+        {/* TOP BAR */}
+        <header className="topbar">
+          <div className="breadcrumb">
+            Workspace <span>/</span> Overview
           </div>
 
-          <div className="stat-card">
-            <span>Medium Priority</span>
-            <strong>
-              {pipeline.filter((item) => item.priority_level === "MEDIUM").length}
-            </strong>
+          <div className="topbar-actions">
+            <div className="search-box">
+              <span>⌕</span>
+
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search opportunities..."
+              />
+            </div>
+
+            <div className="profile-avatar">SR</div>
+          </div>
+        </header>
+
+        {/* HERO */}
+        <section className="hero">
+          <div className="hero-left">
+            <div className="ai-badge">
+              <span>✦</span>
+              AI Engine Active
+            </div>
+
+            <h1>
+              Turn your pipeline into
+              <br />
+              <em>predictable revenue</em>
+            </h1>
+
+            <p>
+              RevenueRescue AI continuously analyzes your sales
+              opportunities and identifies exactly where your team
+              should focus next.
+            </p>
+
+            <div className="hero-tags">
+              <span>Live pipeline analysis</span>
+              <span>Explainable AI</span>
+              <span>Revenue prioritization</span>
+            </div>
+          </div>
+
+          <div className="hero-revenue">
+            <span>AI-forecasted revenue this cycle</span>
+
+            <strong>{money(weightedRevenue)}</strong>
+
+            <small>
+              Based on {pipeline.length} active opportunity
+              {pipeline.length !== 1 ? "ies" : ""}
+            </small>
           </div>
         </section>
-        <section className="priority-summary">
-  <div className="priority-summary-header">
-    <div>
-      <h2>AI Priority Distribution</h2>
-      <p>Current opportunity distribution by AI priority level.</p>
-    </div>
-  </div>
 
-  <div className="priority-bars">
-    <div className="priority-bar-row">
-      <div className="priority-bar-label">
-        <span>High Priority</span>
-        <strong>{highCount}</strong>
-      </div>
-      <div className="priority-bar">
-        <div
-          className="priority-bar-fill high-fill"
-          style={{
-            width: `${pipeline.length ? (highCount / pipeline.length) * 100 : 0}%`,
-          }}
-        />
-      </div>
-    </div>
-
-    <div className="priority-bar-row">
-      <div className="priority-bar-label">
-        <span>Medium Priority</span>
-        <strong>{mediumCount}</strong>
-      </div>
-      <div className="priority-bar">
-        <div
-          className="priority-bar-fill medium-fill"
-          style={{
-            width: `${pipeline.length ? (mediumCount / pipeline.length) * 100 : 0}%`,
-          }}
-        />
-      </div>
-    </div>
-
-    <div className="priority-bar-row">
-      <div className="priority-bar-label">
-        <span>Low Priority</span>
-        <strong>{lowCount}</strong>
-      </div>
-      <div className="priority-bar">
-        <div
-          className="priority-bar-fill low-fill"
-          style={{
-            width: `${pipeline.length ? (lowCount / pipeline.length) * 100 : 0}%`,
-          }}
-        />
-      </div>
-    </div>
-  </div>
-</section>
-{topOpportunity && (
-  <section className="top-opportunity">
-    <div>
-      <span className="ai-badge">AI TOP OPPORTUNITY</span>
-
-      <h2>{topOpportunity.company_name}</h2>
-
-      <p>
-        {topOpportunity.lead_name} · {topOpportunity.deal_name}
-      </p>
-    </div>
-
-    <div className="top-opportunity-score">
-      <span>Priority Score</span>
-      <strong>{topOpportunity.priority_score}</strong>
-      <small>{topOpportunity.priority_level} PRIORITY</small>
-    </div>
-
-    <div className="top-opportunity-action">
-      <strong>Recommended next action</strong>
-      <p>{topOpportunity.recommended_action}</p>
-    </div>
-  </section>
-)}
-{topOpportunity && (
-  <section className="explainable-ai">
-    <div className="explainable-ai-header">
-      <div>
-        <span className="ai-badge">EXPLAINABLE AI</span>
-        <h2>Why this opportunity is prioritized</h2>
-        <p>
-          RevenueRescue AI evaluates multiple signals before assigning
-          a priority score.
-        </p>
-      </div>
-
-      <div className="overall-score">
-        <span>Overall Score</span>
-        <strong>{topOpportunity.priority_score}</strong>
-      </div>
-    </div>
-
-    <div className="score-factors">
-      {scoreFactors.map((factor) => (
-        <div className="score-factor" key={factor.label}>
-          <div className="factor-header">
-            <span>{factor.label}</span>
-            <strong>{factor.display}</strong>
+        {/* METRICS */}
+        <section className="metrics">
+          <div className="metric">
+            <span className="metric-title">PIPELINE VALUE</span>
+            <strong>{money(totalPipeline)}</strong>
+            <small>Open opportunity value</small>
           </div>
 
-          <div className="factor-bar">
-            <div
-              className="factor-fill"
-              style={{ width: `${factor.value}%` }}
-            />
+          <div className="metric">
+            <span className="metric-title">AI PRIORITY SCORE</span>
+            <strong>{score(averageScore)}</strong>
+            <small>Average opportunity score</small>
           </div>
-        </div>
-      ))}
-    </div>
-  </section>
-)}
-{topOpportunity && (
-  <section className="action-center">
-    <div className="action-center-content">
-      <span className="ai-badge">AI SALES ACTION</span>
 
-      <h2>Recommended next step</h2>
+          <div className="metric">
+            <span className="metric-title">HIGH PRIORITY</span>
+            <strong>{highPriorityCount}</strong>
+            <small>Needs attention now</small>
+          </div>
 
-      <p>{topOpportunity.recommended_action}</p>
-    </div>
+          <div className="metric">
+            <span className="metric-title">OPPORTUNITIES</span>
+            <strong>{pipeline.length}</strong>
+            <small>Currently analyzed</small>
+          </div>
+        </section>
 
-    <button
-      className="action-button"
-      onClick={() =>
-        alert(
-          `Action selected for ${topOpportunity.company_name}`
-        )
-      }
-    >
-      Take Action →
-    </button>
-  </section>
-)}
+        {/* FEATURE ROW */}
+        <section className="feature-grid">
+          {/* PIPELINE CARD */}
+          <div className="panel pipeline-card">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">REVENUE PIPELINE</span>
+                <h2>Opportunity overview</h2>
+              </div>
 
-        <section className="pipeline-section">
-  <div className="pipeline-header">
-    <h2>Priority Pipeline</h2>
+              <button className="view-button">
+                View pipeline →
+              </button>
+            </div>
 
-    <input
-      type="text"
-      placeholder="Search company or lead..."
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-      className="search-input"
-    />
-    <select
-  value={priorityFilter}
-  onChange={(e) => setPriorityFilter(e.target.value)}
-  className="priority-filter"
->
-  <option value="ALL">All Priorities</option>
-  <option value="HIGH">High</option>
-  <option value="MEDIUM">Medium</option>
-  <option value="LOW">Low</option>
-</select>
-  </div>
+            <div className="pipeline-visual">
+              <div className="pipeline-total">
+                <span>Total pipeline</span>
+                <strong>{money(totalPipeline)}</strong>
+              </div>
 
-          {loading ? (
-            <p>Loading pipeline...</p>
-          ) : pipeline.length === 0 ? (
-            <p>No pipeline opportunities found.</p>
-          ) : (
-            <div className="pipeline-list">
-  {pipeline
-  .filter((item) =>
-    `${item.company_name} ${item.lead_name}`
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  )
-  .filter(
-    (item) =>
-      priorityFilter === "ALL" ||
-      item.priority_level === priorityFilter
-  )
-    .map((item) => (
-                <div
-  className="pipeline-card"
-  key={item.lead_id}
-  onClick={() => setSelectedOpportunity(item)}
->
-                  <div>
-                    <h3>{item.company_name}</h3>
-                    <p>{item.lead_name}</p>
-                    <p>{item.deal_name}</p>
-                    <span className="deal-stage">
-  Stage: {item.deal_stage}
-</span>
-<p className="deal-value">
-  Deal Value: ₹{Number(item.deal_value).toLocaleString("en-IN")}
-</p>
+              <div className="pipeline-bars">
+                <div className="pipeline-bar-row">
+                  <span>Qualified</span>
+                  <div className="bar">
+                    <div
+                      className="bar-fill"
+                      style={{ width: "72%" }}
+                    />
+                  </div>
+                  <b>72%</b>
+                </div>
+
+                <div className="pipeline-bar-row">
+                  <span>Proposal</span>
+                  <div className="bar">
+                    <div
+                      className="bar-fill"
+                      style={{ width: "56%" }}
+                    />
+                  </div>
+                  <b>56%</b>
+                </div>
+
+                <div className="pipeline-bar-row">
+                  <span>Negotiation</span>
+                  <div className="bar">
+                    <div
+                      className="bar-fill"
+                      style={{ width: "38%" }}
+                    />
+                  </div>
+                  <b>38%</b>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* AI CARD */}
+          <div className="panel ai-insight-card">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">AI RECOMMENDATION</span>
+                <h2>Where to focus next</h2>
+              </div>
+
+              <span className="spark">✦</span>
+            </div>
+
+            {featured ? (
+              <>
+                <div className="insight-company">
+                  <div className="company-icon">
+                    {featured.company_name?.charAt(0) || "R"}
                   </div>
 
-                  <div className="priority-info">
-  <div>
-    <span className={`priority ${item.priority_level.toLowerCase()}`}>
-      {item.priority_level}
-    </span>
+                  <div>
+                    <strong>
+                      {featured.company_name ||
+                        "Priority opportunity"}
+                    </strong>
 
-    <strong className="score">
-      {item.priority_score}
-    </strong>
-    <span className="probability">
-  {item.probability}% probability
-</span>
-  </div>
+                    <span>
+                      {featured.deal_name || "Open opportunity"}
+                    </span>
+                  </div>
 
-  <div className="ai-insight">
-    <strong>Why this opportunity?</strong>
-    <p>{item.priority_reason}</p>
-  </div>
+                  <span className={priorityClass(featured.priority_level)}>
+                    {featured.priority_level || "HIGH"}
+                  </span>
+                </div>
 
-  <div className="ai-action">
-    <strong>Recommended action</strong>
-    <p>{item.recommended_action}</p>
-  </div>
-</div>
-</div>
-              ))}
-            </div>
-          )}
+                <div className="insight-score">
+                  <span>AI PRIORITY SCORE</span>
+                  <strong>{score(featured.priority_score)}</strong>
+                </div>
+
+                <p className="insight-reason">
+                  {featured.priority_reason ||
+                    "AI has identified this opportunity as a key revenue focus."}
+                </p>
+
+                <div className="recommendation">
+                  <span>RECOMMENDED ACTION</span>
+                  <p>
+                    {featured.recommended_action ||
+                      "Follow up with the decision-maker and move the opportunity forward."}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">
+                No opportunities available.
+              </div>
+            )}
+          </div>
         </section>
-        {selectedOpportunity && (
-  <section className="opportunity-details">
-    <div className="details-header">
-      <div>
-        <span className="ai-badge">AI ANALYSIS</span>
-        <h2>{selectedOpportunity.company_name}</h2>
-        <p>{selectedOpportunity.lead_name}</p>
-      </div>
 
-      <button
-        className="close-button"
-        onClick={() => setSelectedOpportunity(null)}
-      >
-        ×
-      </button>
-    </div>
+        {/* OPPORTUNITIES */}
+        <section className="panel opportunities">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">LIVE DATA</span>
+              <h2>Top opportunities</h2>
+            </div>
 
-    <div className="details-grid">
-      <div>
-        <span>Deal</span>
-        <strong>{selectedOpportunity.deal_name}</strong>
-      </div>
+            <span className="live-label">
+              <i /> LIVE
+            </span>
+          </div>
 
-      <div>
-        <span>Deal Stage</span>
-        <strong>{selectedOpportunity.deal_stage}</strong>
-      </div>
+          <div className="table">
+            <div className="table-head">
+              <span>ACCOUNT</span>
+              <span>STAGE</span>
+              <span>VALUE</span>
+              <span>PROBABILITY</span>
+              <span>AI SCORE</span>
+              <span>PRIORITY</span>
+            </div>
 
-      <div>
-        <span>Deal Value</span>
-        <strong>
-          ₹{Number(selectedOpportunity.deal_value).toLocaleString("en-IN")}
-        </strong>
-      </div>
+            {filteredPipeline.map((item) => (
+              <button
+                className="table-row"
+                key={item.lead_id}
+                onClick={() => setSelected(item)}
+              >
+                <div className="account-cell">
+                  <div className="mini-company">
+                    {item.company_name?.charAt(0) || "R"}
+                  </div>
 
-      <div>
-        <span>Probability</span>
-        <strong>{selectedOpportunity.probability}%</strong>
-      </div>
+                  <div>
+                    <strong>
+                      {item.company_name || "Unknown company"}
+                    </strong>
 
-      <div>
-        <span>Priority Score</span>
-        <strong>{selectedOpportunity.priority_score}</strong>
-      </div>
+                    <small>{item.lead_name}</small>
+                  </div>
+                </div>
 
-      <div>
-        <span>Priority</span>
-        <strong>{selectedOpportunity.priority_level}</strong>
-      </div>
-    </div>
+                <span>{item.deal_stage || "—"}</span>
 
-    <div className="detail-insight">
-      <h3>Why this opportunity?</h3>
-      <p>{selectedOpportunity.priority_reason}</p>
-    </div>
+                <strong>{money(item.deal_value)}</strong>
 
-    <div className="detail-action">
-      <h3>Recommended next action</h3>
-      <p>{selectedOpportunity.recommended_action}</p>
-    </div>
-  </section>
-)}
+                <span>
+                  {Number(item.probability ?? 0).toFixed(0)}%
+                </span>
+
+                <strong className="score-value">
+                  {score(item.priority_score)}
+                </strong>
+
+                <span className={priorityClass(item.priority_level)}>
+                  {item.priority_level || "LOW"}
+                </span>
+              </button>
+            ))}
+
+            {!filteredPipeline.length && (
+              <div className="empty-table">
+                No matching opportunities found.
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* FOOTER */}
+        <footer className="dashboard-footer">
+          <span>RevenueRescue AI</span>
+          <span>AI-powered revenue intelligence</span>
+          <span>Pipeline synchronized</span>
+        </footer>
       </main>
+
+      {/* DETAIL MODAL */}
+      {selected && (
+        <div
+          className="modal-overlay"
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="opportunity-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setSelected(null)}
+            >
+              ×
+            </button>
+
+            <span className="eyebrow">OPPORTUNITY DETAILS</span>
+
+            <h2>
+              {selected.company_name ||
+                selected.deal_name ||
+                "Opportunity"}
+            </h2>
+
+            <p className="modal-lead">
+              {selected.lead_name}
+            </p>
+
+            <div className="modal-stats">
+              <div>
+                <span>DEAL VALUE</span>
+                <strong>{money(selected.deal_value)}</strong>
+              </div>
+
+              <div>
+                <span>AI SCORE</span>
+                <strong>{score(selected.priority_score)}</strong>
+              </div>
+
+              <div>
+                <span>PROBABILITY</span>
+                <strong>
+                  {Number(selected.probability ?? 0).toFixed(0)}%
+                </strong>
+              </div>
+
+              <div>
+                <span>STAGE</span>
+                <strong>{selected.deal_stage || "—"}</strong>
+              </div>
+            </div>
+
+            <div className="modal-section">
+              <span>WHY THIS MATTERS</span>
+
+              <p>
+                {selected.priority_reason ||
+                  "This opportunity has been identified by the AI decision engine for further attention."}
+              </p>
+            </div>
+
+            <div className="modal-section recommendation-box">
+              <span>NEXT BEST ACTION</span>
+
+              <p>
+                {selected.recommended_action ||
+                  "Follow up with the opportunity and move the deal forward."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
