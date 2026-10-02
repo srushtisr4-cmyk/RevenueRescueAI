@@ -66,6 +66,7 @@ function priorityClass(level?: string) {
 function App() {
   const [pipeline, setPipeline] = useState<PipelineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState("Overview");
   const [selected, setSelected] = useState<PipelineItem | null>(null);
   const [search, setSearch] = useState("");
 
@@ -169,37 +170,57 @@ function App() {
         <div className="sidebar-section">
           <div className="sidebar-label">WORKSPACE</div>
 
-          <button className="nav-link active">
-            <span>Overview</span>
-          </button>
+          <button
+  className={`nav-link ${activeSection === "Overview" ? "active" : ""}`}
+  onClick={() => setActiveSection("Overview")}
+>
+  <span>Overview</span>
+</button>
 
-          <button className="nav-link">
-            <span>Pipeline</span>
-          </button>
+         <button
+  className={`nav-link ${activeSection === "Pipeline" ? "active" : ""}`}
+  onClick={() => setActiveSection("Pipeline")}
+>
+  <span>Pipeline</span>
+</button>
 
-          <button className="nav-link">
-            <span>AI Insights</span>
-          </button>
+          <button
+  className={`nav-link ${activeSection === "AI Insights" ? "active" : ""}`}
+  onClick={() => setActiveSection("AI Insights")}
+>
+  <span>AI Insights</span>
+</button>
 
-          <button className="nav-link">
-            <span>Accounts</span>
-          </button>
+          <button
+  className={`nav-link ${activeSection === "Accounts" ? "active" : ""}`}
+  onClick={() => setActiveSection("Accounts")}
+>
+  <span>Accounts</span>
+</button>
         </div>
 
         <div className="sidebar-section">
           <div className="sidebar-label">ANALYTICS</div>
 
-          <button className="nav-link">
-            <span>Performance</span>
-          </button>
+          <button
+  className={`nav-link ${activeSection === "Performance" ? "active" : ""}`}
+  onClick={() => setActiveSection("Performance")}
+>
+  <span>Performance</span>
+</button>
 
-          <button className="nav-link">
-            <span>Forecast</span>
-          </button>
-
-          <button className="nav-link">
-            <span>Activity</span>
-          </button>
+          <button
+  className={`nav-link ${activeSection === "Forecast" ? "active" : ""}`}
+  onClick={() => setActiveSection("Forecast")}
+>
+  <span>Forecast</span>
+</button>
+          <button
+  className={`nav-link ${activeSection === "Activity" ? "active" : ""}`}
+  onClick={() => setActiveSection("Activity")}
+>
+  <span>Activity</span>
+</button>
         </div>
 
         <div className="sidebar-bottom">
@@ -248,6 +269,68 @@ function App() {
             <div className="profile-avatar">SR</div>
           </div>
         </header>
+        {activeSection === "Pipeline" && (
+  <section className="panel opportunities" style={{ marginTop: "24px" }}>
+    <div className="panel-heading">
+      <div>
+        <span className="eyebrow">REVENUE PIPELINE</span>
+        <h2>All opportunities</h2>
+      </div>
+
+      <span className="live-label">
+        <i /> {filteredPipeline.length} OPPORTUNITIES
+      </span>
+    </div>
+
+    <div className="table">
+      <div className="table-head">
+        <span>ACCOUNT</span>
+        <span>STAGE</span>
+        <span>VALUE</span>
+        <span>PROBABILITY</span>
+        <span>AI SCORE</span>
+        <span>PRIORITY</span>
+      </div>
+
+      {filteredPipeline.map((item) => (
+        <button
+          className="table-row"
+          key={item.lead_id}
+          onClick={() => setSelected(item)}
+        >
+          <div className="account-cell">
+            <div className="mini-company">
+              {item.company_name?.charAt(0) || "R"}
+            </div>
+
+            <div>
+              <strong>{item.company_name || "Unknown company"}</strong>
+              <small>{item.lead_name}</small>
+            </div>
+          </div>
+
+          <span>{item.deal_stage || "—"}</span>
+          <strong>{money(item.deal_value)}</strong>
+          <span>{Number(item.probability ?? 0).toFixed(0)}%</span>
+
+          <strong className="score-value">
+            {score(item.priority_score)}
+          </strong>
+
+          <span className={priorityClass(item.priority_level)}>
+            {item.priority_level || "LOW"}
+          </span>
+        </button>
+      ))}
+
+      {!filteredPipeline.length && (
+        <div className="empty-table">
+          No matching opportunities found.
+        </div>
+      )}
+    </div>
+  </section>
+)}
 
         {/* HERO */}
         <section className="hero">
