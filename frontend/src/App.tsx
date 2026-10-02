@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-interface PipelineItem {
+type PipelineItem = {
   lead_id: string;
   lead_name: string;
   lead_source?: string;
@@ -11,76 +11,56 @@ interface PipelineItem {
   last_contacted_at?: string | null;
 
   account_id?: string;
-  company_name?: string;
+  company_name: string;
   industry?: string;
-  company_size?: number | string | null;
+  company_size?: number | null;
   location?: string;
   annual_revenue?: number | string | null;
   account_status?: string;
 
-  deal_id?: string;
-  deal_name?: string;
+  deal_id?: string | null;
+  deal_name?: string | null;
   deal_stage?: string | null;
   deal_value?: number | string | null;
   probability?: number | string | null;
   expected_close_date?: string | null;
-  deal_status?: string;
+  deal_status?: string | null;
 
   priority_score?: number | string | null;
-  priority_level?: string;
-  priority_reason?: string;
-  recommended_action?: string;
-}
+  priority_level?: string | null;
+  priority_reason?: string | null;
+  recommended_action?: string | null;
+
+  ai_priority?: string | null;
+  ai_recommendation?: string | null;
+};
 
 const API_URL =
   "https://revenuerescueai-2.onrender.com/api/pipeline";
 
-function money(value: number | string | null | undefined) {
-  const n = Number(value ?? 0);
-
-  if (!n) return "₹0";
-
-  if (n >= 10000000) {
-    return `₹${(n / 10000000).toFixed(1)}Cr`;
-  }
-
-  if (n >= 100000) {
-    return `₹${(n / 100000).toFixed(1)}L`;
-  }
-
-  return `₹${n.toLocaleString("en-IN")}`;
-}
-
-function score(value: number | string | null | undefined) {
-  return Number(value ?? 0).toFixed(1);
-}
-
-function priorityClass(level?: string) {
-  const value = level?.toUpperCase();
-
-  if (value === "HIGH") return "priority high";
-  if (value === "MEDIUM") return "priority medium";
-  return "priority low";
-}
-
 function App() {
   const [pipeline, setPipeline] = useState<PipelineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("Overview");
   const [selected, setSelected] = useState<PipelineItem | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    async function loadPipeline() {
+    const loadPipeline = async () => {
       try {
-        const response = await axios.get<PipelineItem[]>(API_URL);
+        setLoading(true);
+        setError("");
+
+        const response = await axios.get(API_URL);
         setPipeline(response.data);
-      } catch (error) {
-        console.error("Pipeline loading failed:", error);
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load revenue pipeline.");
       } finally {
         setLoading(false);
       }
-    }
+    };
 
     loadPipeline();
   }, []);
@@ -88,7 +68,9 @@ function App() {
   const filteredPipeline = useMemo(() => {
     const query = search.toLowerCase().trim();
 
-    if (!query) return pipeline;
+    if (!query) {
+      return pipeline;
+    }
 
     return pipeline.filter((item) =>
       [
@@ -97,6 +79,9 @@ function App() {
         item.deal_name,
         item.deal_stage,
         item.priority_level,
+        item.lead_status,
+        item.industry,
+        item.location,
       ]
         .filter(Boolean)
         .join(" ")
@@ -105,157 +90,142 @@ function App() {
     );
   }, [pipeline, search]);
 
-  const totalPipeline = useMemo(
-    () =>
-      pipeline.reduce(
-        (sum, item) => sum + Number(item.deal_value ?? 0),
-        0
-      ),
-    [pipeline]
+  const totalPipelineValue = pipeline.reduce(
+    (sum, item) => sum + Number(item.deal_value || 0),
+    0
   );
 
-  const weightedRevenue = useMemo(
-    () =>
-      pipeline.reduce(
-        (sum, item) =>
-          sum +
-          Number(item.deal_value ?? 0) *
-            (Number(item.probability ?? 0) / 100),
-        0
-      ),
-    [pipeline]
-  );
-
-  const averageScore = useMemo(() => {
-    if (!pipeline.length) return 0;
-
-    return (
-      pipeline.reduce(
-        (sum, item) => sum + Number(item.priority_score ?? 0),
-        0
-      ) / pipeline.length
-    );
-  }, [pipeline]);
+  const averageProbability =
+    pipeline.length > 0
+      ? pipeline.reduce(
+          (sum, item) => sum + Number(item.probability || 0),
+          0
+        ) / pipeline.length
+      : 0;
 
   const highPriorityCount = pipeline.filter(
-    (item) => item.priority_level?.toUpperCase() === "HIGH"
+    (item) =>
+      String(item.priority_level || "").toUpperCase() === "HIGH"
   ).length;
 
-  const featured = pipeline[0];
+  const formatCurrency = (value: number | string | null | undefined) => {
+    const amount = Number(value || 0);
 
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-mark">R</div>
-        <p>Loading RevenueRescue AI...</p>
-      </div>
-    );
-  }
+    if (amount >= 10000000) {
+      return `₹${(amount / 10000000).toFixed(2)}Cr`;
+    }
+
+    if (amount >= 100000) {
+      return `₹${(amount / 100000).toFixed(1)}L`;
+    }
+
+    return `₹${amount.toLocaleString("en-IN")}`;
+  };
+
+  const formatDate = (date?: string | null) => {
+    if (!date) return "—";
+
+    const parsed = new Date(date);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return "—";
+    }
+
+    return parsed.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const getPriorityClass = (priority?: string | null) => {
+    const value = String(priority || "").toUpperCase();
+
+    if (value === "HIGH") return "priority high";
+    if (value === "MEDIUM") return "priority medium";
+
+    return "priority low";
+  };
+
+  const navigate = (section: string) => {
+    setActiveSection(section);
+    setSelected(null);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
 
   return (
-    <div className="app">
+    <div className="app-shell">
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">R</div>
 
           <div>
-            <div className="brand-name">RevenueRescue AI</div>
-            <div className="brand-subtitle">
-              Revenue Intelligence
-            </div>
+            <div className="brand-name">RevenueRescue</div>
+            <div className="brand-subtitle">AI Revenue Engine</div>
           </div>
         </div>
 
         <div className="sidebar-section">
-          <div className="sidebar-label">WORKSPACE</div>
+          <span className="sidebar-label">WORKSPACE</span>
 
-          <button
-  className={`nav-link ${activeSection === "Overview" ? "active" : ""}`}
-  onClick={() => setActiveSection("Overview")}
->
-  <span>Overview</span>
-</button>
+          {[
+            "Overview",
+            "Pipeline",
+            "AI Insights",
+            "Accounts",
+            "Performance",
+            "Forecast",
+            "Activity",
+          ].map((item) => (
+            <button
+              key={item}
+              className={`sidebar-item ${
+                activeSection === item ? "active" : ""
+              }`}
+              onClick={() => navigate(item)}
+            >
+              <span className="sidebar-icon">
+                {item === "Overview" && "⌂"}
+                {item === "Pipeline" && "◈"}
+                {item === "AI Insights" && "✦"}
+                {item === "Accounts" && "◎"}
+                {item === "Performance" && "↗"}
+                {item === "Forecast" && "◌"}
+                {item === "Activity" && "◷"}
+              </span>
 
-         <button
-  className={`nav-link ${activeSection === "Pipeline" ? "active" : ""}`}
-  onClick={() => setActiveSection("Pipeline")}
->
-  <span>Pipeline</span>
-</button>
-
-          <button
-  className={`nav-link ${activeSection === "AI Insights" ? "active" : ""}`}
-  onClick={() => setActiveSection("AI Insights")}
->
-  <span>AI Insights</span>
-</button>
-
-          <button
-  className={`nav-link ${activeSection === "Accounts" ? "active" : ""}`}
-  onClick={() => setActiveSection("Accounts")}
->
-  <span>Accounts</span>
-</button>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="sidebar-label">ANALYTICS</div>
-
-          <button
-  className={`nav-link ${activeSection === "Performance" ? "active" : ""}`}
-  onClick={() => setActiveSection("Performance")}
->
-  <span>Performance</span>
-</button>
-
-          <button
-  className={`nav-link ${activeSection === "Forecast" ? "active" : ""}`}
-  onClick={() => setActiveSection("Forecast")}
->
-  <span>Forecast</span>
-</button>
-          <button
-  className={`nav-link ${activeSection === "Activity" ? "active" : ""}`}
-  onClick={() => setActiveSection("Activity")}
->
-  <span>Activity</span>
-</button>
+              <span>{item}</span>
+            </button>
+          ))}
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-label">SYSTEM</div>
+          <div className="ai-status">
+            <div className="status-dot" />
 
-          <div className="system-status">
-            <span className="online-dot" />
             <div>
               <strong>AI Engine Online</strong>
-              <small>Ollama · LangGraph</small>
+              <span>Decision system active</span>
             </div>
-          </div>
-
-          <div className="sidebar-footer">
-            <span className="footer-avatar">SR</span>
-
-            <div>
-              <strong>Revenue Team</strong>
-              <small>Administrator</small>
-            </div>
-
-            <span className="footer-arrow">⌄</span>
           </div>
         </div>
       </aside>
 
       {/* MAIN */}
-      <main className="main">
+      <main className="main-content">
         {/* TOP BAR */}
         <header className="topbar">
-          <div className="breadcrumb">
-            Workspace <span>/</span> Overview
+          <div>
+            <div className="breadcrumb">REVENUE INTELLIGENCE</div>
+            <h1>{activeSection}</h1>
           </div>
 
-          <div className="topbar-actions">
+          <div className="topbar-right">
             <div className="search-box">
               <span>⌕</span>
 
@@ -266,337 +236,657 @@ function App() {
               />
             </div>
 
-            <div className="profile-avatar">SR</div>
+            <div className="live-status">
+              <i />
+              LIVE
+            </div>
+
+            <div className="avatar">SR</div>
           </div>
         </header>
-        {activeSection === "Pipeline" && (
-  <section className="panel opportunities" style={{ marginTop: "24px" }}>
-    <div className="panel-heading">
-      <div>
-        <span className="eyebrow">REVENUE PIPELINE</span>
-        <h2>All opportunities</h2>
-      </div>
 
-      <span className="live-label">
-        <i /> {filteredPipeline.length} OPPORTUNITIES
-      </span>
-    </div>
-
-    <div className="table">
-      <div className="table-head">
-        <span>ACCOUNT</span>
-        <span>STAGE</span>
-        <span>VALUE</span>
-        <span>PROBABILITY</span>
-        <span>AI SCORE</span>
-        <span>PRIORITY</span>
-      </div>
-
-      {filteredPipeline.map((item) => (
-        <button
-          className="table-row"
-          key={item.lead_id}
-          onClick={() => setSelected(item)}
-        >
-          <div className="account-cell">
-            <div className="mini-company">
-              {item.company_name?.charAt(0) || "R"}
-            </div>
-
-            <div>
-              <strong>{item.company_name || "Unknown company"}</strong>
-              <small>{item.lead_name}</small>
-            </div>
+        {/* ERROR */}
+        {error && (
+          <div className="error-banner">
+            <strong>Connection issue:</strong> {error}
           </div>
+        )}
 
-          <span>{item.deal_stage || "—"}</span>
-          <strong>{money(item.deal_value)}</strong>
-          <span>{Number(item.probability ?? 0).toFixed(0)}%</span>
+        {/* =========================
+            OVERVIEW
+        ========================= */}
+        {activeSection === "Overview" && (
+          <>
+            <section className="hero">
+              <div className="hero-copy">
+                <span className="eyebrow">AI-POWERED REVENUE CONTROL</span>
 
-          <strong className="score-value">
-            {score(item.priority_score)}
-          </strong>
+                <h2>
+                  Turn every opportunity
+                  <br />
+                  into your <em>next win.</em>
+                </h2>
 
-          <span className={priorityClass(item.priority_level)}>
-            {item.priority_level || "LOW"}
-          </span>
-        </button>
-      ))}
+                <p>
+                  RevenueRescue AI analyzes leads, accounts and deals to
+                  identify where your team should focus next.
+                </p>
 
-      {!filteredPipeline.length && (
-        <div className="empty-table">
-          No matching opportunities found.
-        </div>
-      )}
-    </div>
-  </section>
-)}
+                <div className="hero-actions">
+                  <button
+                    className="primary-button"
+                    onClick={() => navigate("Pipeline")}
+                  >
+                    View Pipeline
+                    <span>→</span>
+                  </button>
 
-        {/* HERO */}
-        <section className="hero">
-          <div className="hero-left">
-            <div className="ai-badge">
-              <span>✦</span>
-              AI Engine Active
-            </div>
-
-            <h1>
-              Turn your pipeline into
-              <br />
-              <em>predictable revenue</em>
-            </h1>
-
-            <p>
-              RevenueRescue AI continuously analyzes your sales
-              opportunities and identifies exactly where your team
-              should focus next.
-            </p>
-
-            <div className="hero-tags">
-              <span>Live pipeline analysis</span>
-              <span>Explainable AI</span>
-              <span>Revenue prioritization</span>
-            </div>
-          </div>
-
-          <div className="hero-revenue">
-            <span>AI-forecasted revenue this cycle</span>
-
-            <strong>{money(weightedRevenue)}</strong>
-
-            <small>
-              Based on {pipeline.length} active opportunity
-              {pipeline.length !== 1 ? "ies" : ""}
-            </small>
-          </div>
-        </section>
-
-        {/* METRICS */}
-        <section className="metrics">
-          <div className="metric">
-            <span className="metric-title">PIPELINE VALUE</span>
-            <strong>{money(totalPipeline)}</strong>
-            <small>Open opportunity value</small>
-          </div>
-
-          <div className="metric">
-            <span className="metric-title">AI PRIORITY SCORE</span>
-            <strong>{score(averageScore)}</strong>
-            <small>Average opportunity score</small>
-          </div>
-
-          <div className="metric">
-            <span className="metric-title">HIGH PRIORITY</span>
-            <strong>{highPriorityCount}</strong>
-            <small>Needs attention now</small>
-          </div>
-
-          <div className="metric">
-            <span className="metric-title">OPPORTUNITIES</span>
-            <strong>{pipeline.length}</strong>
-            <small>Currently analyzed</small>
-          </div>
-        </section>
-
-        {/* FEATURE ROW */}
-        <section className="feature-grid">
-          {/* PIPELINE CARD */}
-          <div className="panel pipeline-card">
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">REVENUE PIPELINE</span>
-                <h2>Opportunity overview</h2>
-              </div>
-
-              <button className="view-button">
-                View pipeline →
-              </button>
-            </div>
-
-            <div className="pipeline-visual">
-              <div className="pipeline-total">
-                <span>Total pipeline</span>
-                <strong>{money(totalPipeline)}</strong>
-              </div>
-
-              <div className="pipeline-bars">
-                <div className="pipeline-bar-row">
-                  <span>Qualified</span>
-                  <div className="bar">
-                    <div
-                      className="bar-fill"
-                      style={{ width: "72%" }}
-                    />
-                  </div>
-                  <b>72%</b>
-                </div>
-
-                <div className="pipeline-bar-row">
-                  <span>Proposal</span>
-                  <div className="bar">
-                    <div
-                      className="bar-fill"
-                      style={{ width: "56%" }}
-                    />
-                  </div>
-                  <b>56%</b>
-                </div>
-
-                <div className="pipeline-bar-row">
-                  <span>Negotiation</span>
-                  <div className="bar">
-                    <div
-                      className="bar-fill"
-                      style={{ width: "38%" }}
-                    />
-                  </div>
-                  <b>38%</b>
+                  <button
+                    className="secondary-button"
+                    onClick={() => navigate("AI Insights")}
+                  >
+                    Explore AI Insights
+                  </button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* AI CARD */}
-          <div className="panel ai-insight-card">
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">AI RECOMMENDATION</span>
-                <h2>Where to focus next</h2>
+              <div className="hero-visual">
+                <div className="orbit orbit-one" />
+                <div className="orbit orbit-two" />
+
+                <div className="hero-core">
+                  <span>AI</span>
+                  <strong>80.5</strong>
+                  <small>PRIORITY</small>
+                </div>
+              </div>
+            </section>
+
+            {/* METRICS */}
+            <section className="metrics-grid">
+              <div className="metric-card">
+                <span className="metric-label">PIPELINE VALUE</span>
+
+                <strong>
+                  {loading
+                    ? "..."
+                    : formatCurrency(totalPipelineValue)}
+                </strong>
+
+                <span className="metric-foot">
+                  Across active opportunities
+                </span>
               </div>
 
-              <span className="spark">✦</span>
-            </div>
+              <div className="metric-card">
+                <span className="metric-label">OPPORTUNITIES</span>
 
-            {featured ? (
-              <>
-                <div className="insight-company">
-                  <div className="company-icon">
-                    {featured.company_name?.charAt(0) || "R"}
-                  </div>
+                <strong>{loading ? "..." : pipeline.length}</strong>
 
+                <span className="metric-foot">
+                  Currently in pipeline
+                </span>
+              </div>
+
+              <div className="metric-card">
+                <span className="metric-label">AVG. PROBABILITY</span>
+
+                <strong>
+                  {loading
+                    ? "..."
+                    : `${averageProbability.toFixed(0)}%`}
+                </strong>
+
+                <span className="metric-foot">
+                  Weighted deal confidence
+                </span>
+              </div>
+
+              <div className="metric-card accent-card">
+                <span className="metric-label">HIGH PRIORITY</span>
+
+                <strong>
+                  {loading ? "..." : highPriorityCount}
+                </strong>
+
+                <span className="metric-foot">
+                  Opportunities needing attention
+                </span>
+              </div>
+            </section>
+
+            {/* FEATURED OPPORTUNITY */}
+            <section className="content-grid">
+              <div className="panel featured-panel">
+                <div className="panel-heading">
                   <div>
-                    <strong>
-                      {featured.company_name ||
-                        "Priority opportunity"}
-                    </strong>
-
-                    <span>
-                      {featured.deal_name || "Open opportunity"}
-                    </span>
+                    <span className="eyebrow">TOP OPPORTUNITY</span>
+                    <h2>Highest priority deal</h2>
                   </div>
 
-                  <span className={priorityClass(featured.priority_level)}>
-                    {featured.priority_level || "HIGH"}
+                  <span className="live-label">
+                    <i />
+                    AI PRIORITIZED
                   </span>
                 </div>
 
-                <div className="insight-score">
-                  <span>AI PRIORITY SCORE</span>
-                  <strong>{score(featured.priority_score)}</strong>
+                {loading ? (
+                  <div className="loading-state">
+                    Loading opportunity...
+                  </div>
+                ) : pipeline.length === 0 ? (
+                  <div className="empty-state">
+                    No opportunities available.
+                  </div>
+                ) : (
+                  (() => {
+                    const topOpportunity = [...pipeline].sort(
+                      (a, b) =>
+                        Number(b.priority_score || 0) -
+                        Number(a.priority_score || 0)
+                    )[0];
+
+                    return (
+                      <div
+                        className="featured-opportunity"
+                        onClick={() =>
+                          setSelected(topOpportunity)
+                        }
+                      >
+                        <div className="opportunity-main">
+                          <div className="company-avatar">
+                            {topOpportunity.company_name
+                              ?.charAt(0)
+                              .toUpperCase()}
+                          </div>
+
+                          <div>
+                            <h3>{topOpportunity.company_name}</h3>
+
+                            <p>
+                              {topOpportunity.deal_name ||
+                                "Open opportunity"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="opportunity-data">
+                          <div>
+                            <span>DEAL VALUE</span>
+                            <strong>
+                              {formatCurrency(
+                                topOpportunity.deal_value
+                              )}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>PROBABILITY</span>
+                            <strong>
+                              {Number(
+                                topOpportunity.probability || 0
+                              ).toFixed(0)}
+                              %
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>AI SCORE</span>
+                            <strong>
+                              {Number(
+                                topOpportunity.priority_score || 0
+                              ).toFixed(1)}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>PRIORITY</span>
+                            <strong
+                              className={getPriorityClass(
+                                topOpportunity.priority_level
+                              )}
+                            >
+                              {topOpportunity.priority_level ||
+                                "—"}
+                            </strong>
+                          </div>
+                        </div>
+
+                        <div className="featured-action">
+                          View details →
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              <div className="panel ai-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">AI DECISION</span>
+                    <h2>Recommended action</h2>
+                  </div>
+
+                  <span className="ai-badge">✦ AI</span>
                 </div>
 
-                <p className="insight-reason">
-                  {featured.priority_reason ||
-                    "AI has identified this opportunity as a key revenue focus."}
-                </p>
+                {loading ? (
+                  <div className="loading-state">
+                    Analyzing...
+                  </div>
+                ) : pipeline.length === 0 ? (
+                  <div className="empty-state">
+                    No AI recommendation available.
+                  </div>
+                ) : (
+                  <>
+                    <div className="ai-score">
+                      <div className="score-ring">
+                        <strong>
+                          {Number(
+                            pipeline[0].priority_score || 0
+                          ).toFixed(1)}
+                        </strong>
+                        <span>SCORE</span>
+                      </div>
 
-                <div className="recommendation">
-                  <span>RECOMMENDED ACTION</span>
-                  <p>
-                    {featured.recommended_action ||
-                      "Follow up with the decision-maker and move the opportunity forward."}
-                  </p>
+                      <div>
+                        <span className="eyebrow">
+                          PRIORITY LEVEL
+                        </span>
+
+                        <h3>
+                          {pipeline[0].ai_priority ||
+                            pipeline[0].priority_level ||
+                            "HIGH"}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <p className="ai-recommendation">
+                      {pipeline[0].ai_recommendation ||
+                        pipeline[0].recommended_action ||
+                        "Prioritize this opportunity and follow up with the decision-maker."}
+                    </p>
+
+                    <button
+                      className="text-button"
+                      onClick={() => setSelected(pipeline[0])}
+                    >
+                      See AI reasoning →
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* =========================
+            PIPELINE
+        ========================= */}
+        {activeSection === "Pipeline" && (
+          <section
+            className="panel opportunities"
+            style={{ marginTop: "24px" }}
+          >
+            <div className="panel-heading pipeline-heading">
+              <div>
+                <span className="eyebrow">REVENUE PIPELINE</span>
+                <h2>All opportunities</h2>
+              </div>
+
+              <div className="pipeline-controls">
+                <span className="live-label">
+                  <i />
+                  {filteredPipeline.length} OPPORTUNITIES
+                </span>
+
+                <div className="pipeline-search">
+                  <span>⌕</span>
+
+                  <input
+                    type="text"
+                    placeholder="Search TechNova, Rahul, Proposal..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+
+                  {search && (
+                    <button
+                      className="clear-search"
+                      onClick={() => setSearch("")}
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
-              </>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="loading-state">
+                Loading revenue pipeline...
+              </div>
             ) : (
-              <div className="empty-state">
-                No opportunities available.
+              <div className="table">
+                <div className="table-head">
+                  <span>ACCOUNT</span>
+                  <span>STAGE</span>
+                  <span>VALUE</span>
+                  <span>PROBABILITY</span>
+                  <span>AI SCORE</span>
+                  <span>PRIORITY</span>
+                </div>
+
+                {filteredPipeline.map((item) => (
+                  <button
+                    className="table-row"
+                    key={item.lead_id}
+                    onClick={() => setSelected(item)}
+                  >
+                    <div className="account-cell">
+                      <div className="mini-avatar">
+                        {item.company_name
+                          ?.charAt(0)
+                          .toUpperCase()}
+                      </div>
+
+                      <div>
+                        <strong>{item.company_name}</strong>
+                        <span>{item.lead_name}</span>
+                      </div>
+                    </div>
+
+                    <span className="stage">
+                      {item.deal_stage || "—"}
+                    </span>
+
+                    <strong>
+                      {formatCurrency(item.deal_value)}
+                    </strong>
+
+                    <span>
+                      {Number(item.probability || 0).toFixed(0)}%
+                    </span>
+
+                    <strong className="score">
+                      {Number(item.priority_score || 0).toFixed(1)}
+                    </strong>
+
+                    <span
+                      className={getPriorityClass(
+                        item.priority_level
+                      )}
+                    >
+                      {item.priority_level || "—"}
+                    </span>
+                  </button>
+                ))}
+
+                {!filteredPipeline.length && (
+                  <div className="empty-table">
+                    <div className="empty-icon">⌕</div>
+
+                    <strong>
+                      No matching opportunities found.
+                    </strong>
+
+                    <span>
+                      Try searching for TechNova, Rahul, Proposal
+                      or HIGH.
+                    </span>
+
+                    {search && (
+                      <button
+                        className="secondary-button"
+                        onClick={() => setSearch("")}
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        </section>
+          </section>
+        )}
 
-        {/* OPPORTUNITIES */}
-        <section className="panel opportunities">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">LIVE DATA</span>
-              <h2>Top opportunities</h2>
+        {/* =========================
+            AI INSIGHTS
+        ========================= */}
+        {activeSection === "AI Insights" && (
+          <section className="insights-layout">
+            <div className="panel ai-large-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">INTELLIGENCE LAYER</span>
+                  <h2>AI Insights</h2>
+                </div>
+
+                <span className="ai-badge">✦ POWERED BY AI</span>
+              </div>
+
+              {pipeline.length > 0 ? (
+                <>
+                  <div className="insight-score">
+                    <span>Current AI priority score</span>
+
+                    <strong>
+                      {Number(
+                        pipeline[0].priority_score || 0
+                      ).toFixed(1)}
+                    </strong>
+                  </div>
+
+                  <div className="insight-block">
+                    <span className="eyebrow">WHY THIS MATTERS</span>
+
+                    <p>
+                      {pipeline[0].priority_reason ||
+                        "The opportunity combines strong engagement, deal value and probability."}
+                    </p>
+                  </div>
+
+                  <div className="insight-block">
+                    <span className="eyebrow">
+                      RECOMMENDED NEXT ACTION
+                    </span>
+
+                    <p>
+                      {pipeline[0].ai_recommendation ||
+                        pipeline[0].recommended_action ||
+                        "Follow up with the decision-maker and progress the deal."}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state">
+                  No AI insights available.
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* =========================
+            ACCOUNTS
+        ========================= */}
+        {activeSection === "Accounts" && (
+          <section className="panel opportunities section-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">CUSTOMER INTELLIGENCE</span>
+                <h2>Accounts</h2>
+              </div>
+
+              <span className="live-label">
+                <i />
+                {pipeline.length} ACCOUNTS
+              </span>
             </div>
 
-            <span className="live-label">
-              <i /> LIVE
-            </span>
-          </div>
-
-          <div className="table">
-            <div className="table-head">
-              <span>ACCOUNT</span>
-              <span>STAGE</span>
-              <span>VALUE</span>
-              <span>PROBABILITY</span>
-              <span>AI SCORE</span>
-              <span>PRIORITY</span>
-            </div>
-
-            {filteredPipeline.map((item) => (
-              <button
-                className="table-row"
-                key={item.lead_id}
-                onClick={() => setSelected(item)}
-              >
-                <div className="account-cell">
-                  <div className="mini-company">
-                    {item.company_name?.charAt(0) || "R"}
+            <div className="account-grid">
+              {pipeline.map((item) => (
+                <button
+                  className="account-card"
+                  key={item.account_id || item.lead_id}
+                  onClick={() => setSelected(item)}
+                >
+                  <div className="company-avatar">
+                    {item.company_name
+                      ?.charAt(0)
+                      .toUpperCase()}
                   </div>
 
                   <div>
-                    <strong>
-                      {item.company_name || "Unknown company"}
-                    </strong>
+                    <h3>{item.company_name}</h3>
 
-                    <small>{item.lead_name}</small>
+                    <p>
+                      {item.industry || "Business"} ·{" "}
+                      {item.location || "Location unavailable"}
+                    </p>
+
+                    <span>
+                      {item.account_status || "Active"}
+                    </span>
                   </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* =========================
+            PERFORMANCE
+        ========================= */}
+        {activeSection === "Performance" && (
+          <section className="metrics-page">
+            <div className="panel section-panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">
+                    REVENUE PERFORMANCE
+                  </span>
+                  <h2>Pipeline performance</h2>
+                </div>
+              </div>
+
+              <div className="performance-grid">
+                <div>
+                  <span>PIPELINE VALUE</span>
+                  <strong>
+                    {formatCurrency(totalPipelineValue)}
+                  </strong>
                 </div>
 
-                <span>{item.deal_stage || "—"}</span>
+                <div>
+                  <span>AVERAGE PROBABILITY</span>
+                  <strong>
+                    {averageProbability.toFixed(0)}%
+                  </strong>
+                </div>
 
-                <strong>{money(item.deal_value)}</strong>
+                <div>
+                  <span>ACTIVE OPPORTUNITIES</span>
+                  <strong>{pipeline.length}</strong>
+                </div>
 
-                <span>
-                  {Number(item.probability ?? 0).toFixed(0)}%
-                </span>
-
-                <strong className="score-value">
-                  {score(item.priority_score)}
-                </strong>
-
-                <span className={priorityClass(item.priority_level)}>
-                  {item.priority_level || "LOW"}
-                </span>
-              </button>
-            ))}
-
-            {!filteredPipeline.length && (
-              <div className="empty-table">
-                No matching opportunities found.
+                <div>
+                  <span>HIGH PRIORITY</span>
+                  <strong>{highPriorityCount}</strong>
+                </div>
               </div>
-            )}
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
 
-        {/* FOOTER */}
-        <footer className="dashboard-footer">
-          <span>RevenueRescue AI</span>
-          <span>AI-powered revenue intelligence</span>
-          <span>Pipeline synchronized</span>
-        </footer>
+        {/* =========================
+            FORECAST
+        ========================= */}
+        {activeSection === "Forecast" && (
+          <section className="panel section-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">REVENUE OUTLOOK</span>
+                <h2>Forecast</h2>
+              </div>
+            </div>
+
+            <div className="forecast-box">
+              <div>
+                <span>EXPECTED PIPELINE</span>
+
+                <strong>
+                  {formatCurrency(
+                    pipeline.reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.deal_value || 0) *
+                          (Number(item.probability || 0) / 100),
+                      0
+                    )
+                  )}
+                </strong>
+              </div>
+
+              <p>
+                Forecast value is calculated from deal value weighted
+                by probability.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {/* =========================
+            ACTIVITY
+        ========================= */}
+        {activeSection === "Activity" && (
+          <section className="panel section-panel">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">RECENT ACTIVITY</span>
+                <h2>Revenue activity</h2>
+              </div>
+            </div>
+
+            <div className="activity-list">
+              {pipeline.map((item) => (
+                <button
+                  className="activity-item"
+                  key={item.lead_id}
+                  onClick={() => setSelected(item)}
+                >
+                  <div className="activity-dot" />
+
+                  <div>
+                    <strong>
+                      {item.lead_name} · {item.company_name}
+                    </strong>
+
+                    <span>
+                      Opportunity currently in{" "}
+                      {item.deal_stage || "pipeline"}
+                    </span>
+                  </div>
+
+                  <time>
+                    {formatDate(item.last_contacted_at)}
+                  </time>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
-      {/* DETAIL MODAL */}
+      {/* =========================
+          OPPORTUNITY MODAL
+      ========================= */}
       {selected && (
         <div
-          className="modal-overlay"
+          className="modal-backdrop"
           onClick={() => setSelected(null)}
         >
           <div
@@ -610,59 +900,135 @@ function App() {
               ×
             </button>
 
-            <span className="eyebrow">OPPORTUNITY DETAILS</span>
+            <div className="modal-header">
+              <div className="company-avatar large">
+                {selected.company_name
+                  ?.charAt(0)
+                  .toUpperCase()}
+              </div>
 
-            <h2>
-              {selected.company_name ||
-                selected.deal_name ||
-                "Opportunity"}
-            </h2>
+              <div>
+                <span className="eyebrow">
+                  OPPORTUNITY DETAILS
+                </span>
 
-            <p className="modal-lead">
-              {selected.lead_name}
-            </p>
+                <h2>{selected.company_name}</h2>
+
+                <p>
+                  {selected.deal_name || "Revenue opportunity"}
+                </p>
+              </div>
+            </div>
 
             <div className="modal-stats">
               <div>
                 <span>DEAL VALUE</span>
-                <strong>{money(selected.deal_value)}</strong>
-              </div>
-
-              <div>
-                <span>AI SCORE</span>
-                <strong>{score(selected.priority_score)}</strong>
+                <strong>
+                  {formatCurrency(selected.deal_value)}
+                </strong>
               </div>
 
               <div>
                 <span>PROBABILITY</span>
                 <strong>
-                  {Number(selected.probability ?? 0).toFixed(0)}%
+                  {Number(selected.probability || 0).toFixed(0)}%
                 </strong>
               </div>
 
               <div>
-                <span>STAGE</span>
-                <strong>{selected.deal_stage || "—"}</strong>
+                <span>AI SCORE</span>
+                <strong>
+                  {Number(selected.priority_score || 0).toFixed(1)}
+                </strong>
+              </div>
+
+              <div>
+                <span>PRIORITY</span>
+                <strong
+                  className={getPriorityClass(
+                    selected.priority_level
+                  )}
+                >
+                  {selected.priority_level || "—"}
+                </strong>
               </div>
             </div>
 
             <div className="modal-section">
-              <span>WHY THIS MATTERS</span>
+              <span className="eyebrow">LEAD INFORMATION</span>
+
+              <div className="detail-grid">
+                <div>
+                  <span>Lead</span>
+                  <strong>{selected.lead_name}</strong>
+                </div>
+
+                <div>
+                  <span>Lead score</span>
+                  <strong>
+                    {Number(selected.lead_score || 0).toFixed(1)}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Stage</span>
+                  <strong>
+                    {selected.deal_stage || "—"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Industry</span>
+                  <strong>
+                    {selected.industry || "—"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Location</span>
+                  <strong>
+                    {selected.location || "—"}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Expected close</span>
+                  <strong>
+                    {formatDate(selected.expected_close_date)}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-section ai-reasoning">
+              <div className="ai-section-title">
+                <span className="ai-badge">✦ AI</span>
+                <span className="eyebrow">AI REASONING</span>
+              </div>
 
               <p>
                 {selected.priority_reason ||
-                  "This opportunity has been identified by the AI decision engine for further attention."}
+                  "High lead engagement combined with the current deal value and probability makes this opportunity important."}
               </p>
+
+              <div className="recommendation-box">
+                <span>RECOMMENDED ACTION</span>
+
+                <strong>
+                  {selected.ai_recommendation ||
+                    selected.recommended_action ||
+                    "Follow up with the decision-maker and progress the opportunity."}
+                </strong>
+              </div>
             </div>
 
-            <div className="modal-section recommendation-box">
-              <span>NEXT BEST ACTION</span>
-
-              <p>
-                {selected.recommended_action ||
-                  "Follow up with the opportunity and move the deal forward."}
-              </p>
-            </div>
+            <button
+              className="primary-button modal-button"
+              onClick={() => setSelected(null)}
+            >
+              Close Opportunity
+              <span>→</span>
+            </button>
           </div>
         </div>
       )}
